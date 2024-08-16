@@ -79,3 +79,5 @@ Run the Flask server to handle file serving and requests:
 
 ```sh
 python patch.py
+```
+- The server will start on port 5067 by default. You can change the port by setting the PORT environment variable
