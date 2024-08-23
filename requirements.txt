@@ -1,0 +1,16 @@
+blinker==1.8.2
+certifi==2024.7.4
+charset-normalizer==3.3.2
+click==8.1.7
+colorama==0.4.6
+Flask==3.0.3
+idna==3.7
+itsdangerous==2.2.0
+Jinja2==3.1.4
+MarkupSafe==2.1.5
+prompt_toolkit==3.0.47
+pyfiglet==1.0.2
+requests==2.32.3
+urllib3==2.2.2
+wcwidth==0.2.13
+Werkzeug==3.0.4
