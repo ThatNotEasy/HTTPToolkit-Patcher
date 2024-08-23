@@ -5,7 +5,6 @@ import subprocess
 import sys
 from colorama import init, Fore, Style
 
-# Initialize colorama
 init(autoreset=True)
 
 def print_banner():
@@ -78,7 +77,7 @@ def run_node_start():
         print(Fore.RED + f"Error occurred while running 'node . start'. Exit code: {result}")
 
 def main():
-    print_banner()  # Print the banner at the start
+    print_banner()
     
     if not check_node_installed():
         install_node()
@@ -91,11 +90,9 @@ def main():
 
     args = parser.parse_args()
 
-    # Always run npm install
     if not run_npm_install():
         return
 
-    # Check which command to run based on arguments
     if args.patch:
         run_node_patch()
     elif args.restore:
