@@ -1,40 +1,27 @@
 const { HttpsProxyAgent } = require('https-proxy-agent')
+const axios = require('axios').default
 const electron = require('electron')
 const express = require('express')
-const https = require('https')
 const fs = require('fs')
 
-const request = (method, url, redirectCount = 0) => new Promise((resolve, reject) => {
-  const agent = globalProxy ? new HttpsProxyAgent(globalProxy.startsWith('http') ? globalProxy.replace(/^http:/, 'https:') : 'https://' + globalProxy) : undefined //? Use proxy if set (globalProxy is injected by the patcher)
+function showPatchError(message) {
+  console.error(message)
+  electron.dialog.showErrorBox('Patch Error', message + '\n\nPlease report this issue on the GitHub repository (github.com/XielQs/httptoolkit-pro-patcher)')
+}
 
-  const req = https.request(url, { method, agent }, res => {
-    let data = Buffer.alloc(0)
-
-    res.on('data', chunk => data = Buffer.concat([data, chunk]))
-
-    res.on('end', () => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        if (redirectCount >= 5) {
-          reject(new Error('Too many redirects'))
-          return
-        }
-        resolve(request(method, res.headers.location, redirectCount + 1))
-        return
-      }
-      resolve({
-        data,
-        statusCode: res.statusCode,
-        headers: res.headers
-      })
-    })
-  })
-
-  req.on('error', reject)
-
-  req.end()
+const axiosInstance = axios.create({
+  baseURL: 'https://app.httptoolkit.tech',
+  httpsAgent:
+    globalProxy
+      ? new HttpsProxyAgent(
+          globalProxy.startsWith('http')
+            ? globalProxy.replace(/^http:/, 'https:')
+            : 'https://' + globalProxy
+        )
+      : undefined //? Use proxy if set (globalProxy is injected by the patcher)
 })
 
-const hasInternet = () => request('HEAD', 'https://app.httptoolkit.tech').then(r => r.statusCode >= 200 && r.statusCode < 400).catch(() => false)
+const hasInternet = () => axiosInstance.head('/').then(() => true).catch(() => false)
 
 const port = process.env.PORT || 5067
 const tempPath = path.join(os.tmpdir(), 'httptoolkit-patch')
@@ -77,7 +64,7 @@ app.all('*', async (req, res) => {
   try {
     if (fs.existsSync(filePath)) { //? Check if file exists in temp path
       try {
-        const remoteDate = await request('HEAD', `https://app.httptoolkit.tech${req.url}`).then(res => new Date(res.headers['last-modified']))
+        const remoteDate = await axiosInstance.head(req.url).then(res => new Date(res.headers['last-modified']))
         if (remoteDate < new Date(fs.statSync(filePath).mtime)) {
           console.log(`[Patcher] File not changed, serving from temp path`)
           res.sendFile(filePath)
@@ -88,7 +75,7 @@ app.all('*', async (req, res) => {
       }
     } else console.log(`[Patcher] File not found in temp path, downloading`)
 
-    const remoteFile = await request('GET', `https://app.httptoolkit.tech${req.url}`)
+    const remoteFile = await axiosInstance.get(req.url, { responseType: 'arraybuffer' })
 
     for (const [key, value] of Object.entries(remoteFile.headers)) res.setHeader(key, value)
 
@@ -107,22 +94,28 @@ app.all('*', async (req, res) => {
 
       data = data.toString()
 
-      const accStoreName = data.match(/class ([0-9A-Za-z_]+){constructor\(e\){this\.goToSettings=e/)?.[1]
-      const modName = data.match(/([0-9A-Za-z_]+).(getLatestUserData|getLastUserData)/)?.[1]
+      const accStoreName = data.match(/class ([0-9A-Za-z_$]+){constructor\(e\){this\.goToSettings=e/)?.[1]
+      const modName = data.match(/([0-9A-Za-z_$]+).(getLatestUserData|getLastUserData)/)?.[1]
 
-      if (!accStoreName) console.error(`[Patcher] [ERR] Account store name not found in main.js`)
-      else if (!modName) console.error(`[Patcher] [ERR] Module name not found in main.js`)
+      if (!accStoreName) showPatchError(`[Patcher] [ERR] Account store name not found in main.js`)
+      else if (!modName) showPatchError(`[Patcher] [ERR] Module name not found in main.js`)
       else {
         let patched = data
           .replace(`class ${accStoreName}{`, `["getLatestUserData","getLastUserData"].forEach(p=>Object.defineProperty(${modName},p,{value:()=>user}));class ${accStoreName}{`)
-        if (patched === data) console.error(`[Patcher] [ERR] Patch failed`)
+        if (patched === data) showPatchError(`[Patcher] [ERR] Patch failed`)
         else {
           patched = `const user=${JSON.stringify({
             email, //? Injected by the patcher
             subscription: {
               status: 'active',
+              quanity: 1,
               expiry: new Date('9999-12-31').toISOString(),
+              sku: 'pro-annual',
               plan: 'pro-annual',
+              tierCode: 'pro',
+              interval: 'annual',
+              canManageSubscription: true,
+              updateBillingDetailsUrl: 'https://github.com/XielQs/httptoolkit-pro-patcher',
             }
           })};user.subscription.expiry=new Date(user.subscription.expiry);` + patched
           data = patched
