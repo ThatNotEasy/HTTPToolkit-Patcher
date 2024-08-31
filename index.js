@@ -67,6 +67,15 @@ const rm = (/** @type {string} */ dirPath) => {
   }
 }
 
+const canWrite = (/** @type {string} */ dirPath) => {
+  try {
+    fs.accessSync(dirPath, fs.constants.W_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** @type {Array<import('child_process').ChildProcess>} */
 const activeProcesses = []
 let isCancelled = false
@@ -84,7 +93,7 @@ const cleanUp = async () => {
   }
   const paths = [
     path.join(os.tmpdir(), 'httptoolkit-patch'),
-    path.join(appPath, 'app')
+    path.join(os.tmpdir(), 'httptoolkit-patcher-temp')
   ]
   try {
     for (const p of paths) {
@@ -101,7 +110,7 @@ const cleanUp = async () => {
 
 const patchApp = async () => {
   const filePath = path.join(appPath, 'app.asar')
-  const tempPath = path.join(appPath, 'app')
+  const tempPath = path.join(os.tmpdir(), 'httptoolkit-patcher-temp')
 
   if (fs.readFileSync(filePath).includes('Injected by HTTP Toolkit Patcher')) {
     console.log(chalk.yellowBright`[!] HTTP Toolkit already patched`)
@@ -110,12 +119,17 @@ const patchApp = async () => {
 
   console.log(chalk.blueBright`[+] Started patching app...`)
 
+  if (!canWrite(filePath)) {
+    console.error(chalk.redBright`[-] Insufficient permissions to write to {bold ${filePath}}, try running ${!isWin ? 'with sudo' : 'node as administrator'}`)
+    process.exit(1)
+  }
+
   if (globalProxy) {
     if (!globalProxy.match(/^https?:/)) {
       console.error(chalk.redBright`[-] Global proxy must start with http:// or https://`)
       process.exit(1)
     }
-    console.log(chalk.yellowBright`[+] Adding a custom proxy: {bold ${globalProxy}}`)
+    console.log(chalk.yellowBright`[+] Adding a custom global proxy: {bold ${globalProxy}}`)
   }
 
   console.log(chalk.yellowBright`[+] Extracting app...`)
@@ -127,7 +141,7 @@ const patchApp = async () => {
     asar.extractAll(filePath, tempPath)
   } catch (e) {
     if (!isSudo && e.errno === -13) { //? Permission denied
-      console.error(chalk.redBright`[-] Permission denied${!isWin ? ', try running with sudo' : ', try running node as administrator'}`)
+      console.error(chalk.redBright`[-] Permission denied, try running ${!isWin ? 'with sudo' : 'node as administrator'}`)
       process.exit(1)
     }
     console.error(chalk.redBright`[-] An error occurred while extracting app`, e)
@@ -165,7 +179,7 @@ const patchApp = async () => {
   console.log(chalk.greenBright`[+] Patched index.js`)
   console.log(chalk.yellowBright`[+] Installing dependencies...`)
   try {
-    const proc = spawn('npm install express', { cwd: tempPath, stdio: 'inherit', shell: true })
+    const proc = spawn('npm install express axios', { cwd: tempPath, stdio: 'inherit', shell: true })
     activeProcesses.push(proc)
     await new Promise(resolve =>
       proc.on('close', resolve)
@@ -201,7 +215,7 @@ switch (argv._[0]) {
       rm(path.join(os.tmpdir(), 'httptoolkit-patch'))
     } catch (e) {
       if (!isSudo && e.errno === -13) { //? Permission denied
-        console.error(chalk.redBright`[-] Permission denied${!isWin ? ', try running with sudo' : ', try running node as administrator'}`)
+        console.error(chalk.redBright`[-] Permission denied, try running ${!isWin ? 'with sudo' : 'node as administrator'}`)
         process.exit(1)
       }
       console.error(chalk.redBright`[-] An error occurred`, e)
