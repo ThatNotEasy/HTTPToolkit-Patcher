@@ -1,4 +1,3 @@
-// @ts-check
 import { spawn } from 'child_process';
 import asar from '@electron/asar';
 import prompts from 'prompts';
@@ -19,7 +18,8 @@ const argv = await yargs(process.argv.slice(2))
 
 const globalProxy = argv.proxy;
 const isWin = process.platform === 'win32';
-const isSudo = !isWin && (process.getuid || (() => process.env.SUDO_UID ? 0 : null))() === 0;
+const isMac = process.platform === 'darwin';
+const appPath = argv.path || getAppPath();
 
 const getAppPath = () => {
   if (argv.path) {
@@ -33,17 +33,6 @@ const getAppPath = () => {
   return '/opt/httptoolkit/resources';
 };
 
-const appPath = getAppPath();
-
-const canWrite = (dirPath) => {
-  try {
-    fs.accessSync(dirPath, fs.constants.W_OK);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
 const rm = (dirPath) => {
   if (!fs.existsSync(dirPath)) return;
   if (!fs.lstatSync(dirPath).isDirectory()) return fs.rmSync(dirPath, { force: true });
@@ -54,23 +43,13 @@ const rm = (dirPath) => {
   }
 };
 
-const cleanUp = async () => {
-  console.log(chalk.redBright`[-] Operation cancelled, cleaning up...`);
-  const paths = [
-    path.join(os.tmpdir(), 'httptoolkit-patch'),
-    path.join(os.tmpdir(), 'httptoolkit-patcher-temp')
-  ];
+const canWrite = (dirPath) => {
   try {
-    for (const p of paths) {
-      if (fs.existsSync(p)) {
-        console.log(chalk.yellowBright`[+] Removing {bold ${p}}`);
-        rm(p);
-      }
-    }
-  } catch (e) {
-    console.error(chalk.redBright`[-] An error occurred while cleaning up`, e);
+    fs.accessSync(dirPath, fs.constants.W_OK);
+    return true;
+  } catch {
+    return false;
   }
-  process.exit(1);
 };
 
 const patchApp = async () => {
@@ -107,10 +86,6 @@ const patchApp = async () => {
   try {
     asar.extractAll(filePath, tempPath);
   } catch (e) {
-    if (!isSudo && e.errno === -13) {
-      console.error(chalk.redBright`[-] Permission denied, try running ${!isWin ? 'with sudo' : 'node as administrator'}`);
-      process.exit(1);
-    }
     console.error(chalk.redBright`[-] An error occurred while extracting app`, e);
     process.exit(1);
   }
@@ -120,7 +95,16 @@ const patchApp = async () => {
     console.error(chalk.redBright`[-] Index file not found`);
     await cleanUp();
   }
-  const data = fs.readFileSync(indexPath, 'utf-8');
+  let data = fs.readFileSync(indexPath, 'utf-8');
+
+  // Avoid redeclaration of 'path' or other modules
+  if (!data.includes("const path = require('path');")) {
+    data = `const path = require('path');\n` + data;
+  }
+  if (!data.includes("const os = require('os');")) {
+    data = `const os = require('os');\n` + data;
+  }
+
   const patch = fs.readFileSync('patch.js', 'utf-8');
   const patchedData = data.replace(
     'const APP_URL =',
