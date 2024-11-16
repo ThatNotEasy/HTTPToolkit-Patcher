@@ -7,20 +7,10 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 
-const argv = await yargs(process.argv.slice(2))
-  .command('patch', 'Patch HTTP Toolkit')
-  .command('restore', 'Restore HTTP Toolkit')
-  .command('start', 'Start HTTP Toolkit with debug logs enabled')
-  .option('proxy', { alias: 'p', type: 'string' })
-  .option('path', { alias: 'P', type: 'string' })
-  .demandCommand(1)
-  .parse();
-
-const globalProxy = argv.proxy;
 const isWin = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
-const appPath = argv.path || getAppPath();
 
+// Define getAppPath function first
 const getAppPath = () => {
   if (argv.path) {
     return argv.path.endsWith(isMac ? '/Resources' : '/resources')
@@ -32,6 +22,19 @@ const getAppPath = () => {
   if (fs.existsSync('/opt/HTTP Toolkit/resources')) return '/opt/HTTP Toolkit/resources';
   return '/opt/httptoolkit/resources';
 };
+
+// Parse command-line arguments
+const argv = await yargs(process.argv.slice(2))
+  .command('patch', 'Patch HTTP Toolkit')
+  .command('restore', 'Restore HTTP Toolkit')
+  .command('start', 'Start HTTP Toolkit with debug logs enabled')
+  .option('proxy', { alias: 'p', type: 'string' })
+  .option('path', { alias: 'P', type: 'string' })
+  .demandCommand(1)
+  .parse();
+
+const globalProxy = argv.proxy;
+const appPath = argv.path || getAppPath();
 
 const rm = (dirPath) => {
   if (!fs.existsSync(dirPath)) return;
@@ -50,6 +53,25 @@ const canWrite = (dirPath) => {
   } catch {
     return false;
   }
+};
+
+const cleanUp = async () => {
+  console.log(chalk.redBright`[-] Operation cancelled, cleaning up...`);
+  const paths = [
+    path.join(os.tmpdir(), 'httptoolkit-patch'),
+    path.join(os.tmpdir(), 'httptoolkit-patcher-temp')
+  ];
+  try {
+    for (const p of paths) {
+      if (fs.existsSync(p)) {
+        console.log(chalk.yellowBright`[+] Removing {bold ${p}}`);
+        rm(p);
+      }
+    }
+  } catch (e) {
+    console.error(chalk.redBright`[-] An error occurred while cleaning up`, e);
+  }
+  process.exit(1);
 };
 
 const patchApp = async () => {
