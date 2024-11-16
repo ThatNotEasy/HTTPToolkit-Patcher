@@ -53,6 +53,21 @@ const canWrite = (dirPath) => {
   }
 };
 
+// Helper function to find main.js dynamically
+const findFile = (dir, fileName) => {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      const result = findFile(fullPath, fileName);
+      if (result) return result;
+    } else if (entry.isFile() && entry.name === fileName) {
+      return fullPath;
+    }
+  }
+  return null;
+};
+
 const cleanUp = async () => {
   console.log(chalk.redBright`[-] Operation cancelled, cleaning up...`);
   const paths = [
@@ -110,11 +125,13 @@ const patchApp = async () => {
     return;
   }
 
-  const indexPath = path.join(tempPath, 'build', 'main.js');
-  if (!fs.existsSync(indexPath)) {
-    console.error(chalk.redBright`[-] main.js file not found`);
+  // Dynamically find the main.js file
+  const indexPath = findFile(tempPath, 'main.js');
+  if (!indexPath) {
+    console.error(chalk.redBright`[-] main.js file not found in the extracted app.asar`);
     await cleanUp();
   }
+
   let data = fs.readFileSync(indexPath, 'utf-8');
 
   // Inject custom account details for Pro plan
