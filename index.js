@@ -10,7 +10,6 @@ import os from 'os';
 const isWin = process.platform === 'win32';
 const isMac = process.platform === 'darwin';
 
-// Define getAppPath function first
 const getAppPath = () => {
   if (argv.path) {
     return argv.path.endsWith(isMac ? '/Resources' : '/resources')
@@ -23,7 +22,6 @@ const getAppPath = () => {
   return '/opt/httptoolkit/resources';
 };
 
-// Parse command-line arguments
 const argv = await yargs(process.argv.slice(2))
   .command('patch', 'Patch HTTP Toolkit')
   .command('restore', 'Restore HTTP Toolkit')
@@ -102,61 +100,52 @@ const patchApp = async () => {
     await cleanUp();
   }
 
-  console.log(chalk.yellowBright`[+] Extracting app...`);
+  console.log(chalk.yellowBright`[+] Extracting app.asar...`);
   rm(tempPath);
 
   try {
     asar.extractAll(filePath, tempPath);
   } catch (e) {
-    console.error(chalk.redBright`[-] An error occurred while extracting app`, e);
-    process.exit(1);
+    console.error(chalk.redBright`[-] Error extracting app.asar:`, e);
+    return;
   }
 
-  const indexPath = path.join(tempPath, 'build', 'index.js');
+  const indexPath = path.join(tempPath, 'build', 'main.js');
   if (!fs.existsSync(indexPath)) {
-    console.error(chalk.redBright`[-] Index file not found`);
+    console.error(chalk.redBright`[-] main.js file not found`);
     await cleanUp();
   }
   let data = fs.readFileSync(indexPath, 'utf-8');
 
-  // Avoid redeclaration of 'path'
-  if (!data.includes("const path = require('path');")) {
-    data = `const path = require('path');\n` + data;
-  }
+  // Inject custom account details for Pro plan
+  const injectedUserData = `
+    const user = {
+      email: "${email}",
+      subscription: {
+        status: "active",
+        quantity: 1,
+        expiry: new Date("9999-12-31").toISOString(),
+        sku: "pro-annual",
+        plan: "pro-annual",
+        tierCode: "pro",
+        interval: "annual",
+        canManageSubscription: true,
+        updateBillingDetailsUrl: "https://app.httptoolkit.tech/billing"
+      }
+    };
+    user.subscription.expiry = new Date(user.subscription.expiry);
+  `;
 
-  const patch = fs.readFileSync('patch.js', 'utf-8');
-  const patchedData = data.replace(
-    'const APP_URL =',
-    `// ------- Injected by HTTP Toolkit Patcher -------
-const email = \`${email.replace(/`/g, '\\`')}\`;
-const globalProxy = process.env.PROXY ?? \`${globalProxy ? globalProxy.replace(/`/g, '\\`') : ''}\`;
-${patch}
-// ------- End patched content -------
-const APP_URL =`
-  );
-
-  if (data === patchedData || !patchedData) {
-    console.error(chalk.redBright`[-] Patch failed`);
-    await cleanUp();
-  }
-
+  const patchedData = `${injectedUserData}\n${data}`;
+  
   fs.writeFileSync(indexPath, patchedData, 'utf-8');
-  console.log(chalk.greenBright`[+] Patched index.js`);
-  console.log(chalk.yellowBright`[+] Installing dependencies...`);
+  console.log(chalk.greenBright`[+] Patched main.js successfully`);
 
   try {
-    const proc = spawn('npm install express axios', { cwd: tempPath, stdio: 'inherit', shell: true });
-    await new Promise((resolve) => proc.on('close', resolve));
-    rm(path.join(tempPath, 'package-lock.json'));
-    fs.copyFileSync(filePath, `${filePath}.bak`);
-    console.log(chalk.greenBright`[+] Backup created at ${filePath}.bak`);
-    console.log(chalk.yellowBright`[+] Building app...`);
     await asar.createPackage(tempPath, filePath);
-    rm(tempPath);
-    console.log(chalk.greenBright`[+] HTTP Toolkit patched successfully`);
+    console.log(chalk.greenBright`[+] Repacked app.asar with patch`);
   } catch (e) {
-    console.error(chalk.redBright`[-] An error occurred while installing dependencies`, e);
-    await cleanUp();
+    console.error(chalk.redBright`[-] Error repacking app.asar:`, e);
   }
 };
 
