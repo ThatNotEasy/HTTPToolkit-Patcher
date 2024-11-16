@@ -119,12 +119,9 @@ const patchApp = async () => {
   }
   let data = fs.readFileSync(indexPath, 'utf-8');
 
-  // Avoid redeclaration of 'path' or other modules
+  // Avoid redeclaration of 'path'
   if (!data.includes("const path = require('path');")) {
     data = `const path = require('path');\n` + data;
-  }
-  if (!data.includes("const os = require('os');")) {
-    data = `const os = require('os');\n` + data;
   }
 
   const patch = fs.readFileSync('patch.js', 'utf-8');
